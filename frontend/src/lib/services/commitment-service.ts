@@ -13,6 +13,7 @@ const plusDays = (value: string, days: number) => { const date = parseDate(value
 export const daysBetween = (from: string, to: string) => Math.round((parseDate(to).getTime() - parseDate(from).getTime()) / DAY);
 export const durationOf = (item: Pick<Commitment, "startDate" | "endDate">) => Math.max(1, daysBetween(item.startDate, item.endDate) + 1);
 const targetFor = (rule: GoalRule) => rule.type === "daily" ? 1 : rule.target;
+const maximumTargetFor = (rule: GoalRule) => rule.type === "daily" ? 1 : rule.type === "weekly" ? 7 : rule.type === "monthly" ? 31 : rule.windowDays;
 const periodStart = (date: string, rule: GoalRule, startDate: string) => {
   if (rule.type === "daily") return date;
   if (rule.type === "monthly") return `${date.slice(0, 7)}-01`;
@@ -79,8 +80,11 @@ export const commitmentService = {
   async signOut() { await localRepository.setSession(null); },
   async create(userId: string, draft: CommitmentDraft) {
     if (!draft.title.trim()) throw new Error("Give this commitment a name.");
+    if (draft.startDate < localToday()) throw new Error("Choose today or a future start date. Past dates cannot be checked in reliably.");
     if (draft.endDate < draft.startDate) throw new Error("The end date must be after the start date.");
-    if (targetFor(draft.goalRule) < 1) throw new Error("Your target must be at least one.");
+    if (durationOf(draft) > 365) throw new Error("Keep a commitment within 365 days for this MVP.");
+    if (!Number.isInteger(targetFor(draft.goalRule)) || targetFor(draft.goalRule) < 1) throw new Error("Your target must be a whole number of at least one.");
+    if (targetFor(draft.goalRule) > maximumTargetFor(draft.goalRule)) throw new Error(`This goal cannot exceed ${maximumTargetFor(draft.goalRule)} successful days in its period.`);
     const now = new Date().toISOString();
     const item: Commitment = { ...draft, id: makeId(), userId, title: draft.title.trim(), description: draft.description?.trim(), reward: draft.reward.trim() || "A meaningful reward", status: "active", createdAt: now, updatedAt: now, checkIns: [] };
     return localRepository.saveCommitment(item);
@@ -89,7 +93,7 @@ export const commitmentService = {
   async remove(id: string) { await localRepository.deleteCommitment(id); },
   async checkIn(id: string, outcome: CheckIn["outcome"], note?: string, reason?: string) {
     const current = await localRepository.getCommitment(id); if (!current) throw new Error("This commitment no longer exists.");
-    const item = lifecycle(current); if (item.status !== "active") throw new Error("This commitment is no longer active.");
+    const item = lifecycle(current); if (item !== current) await localRepository.saveCommitment(item); if (item.status !== "active") throw new Error("This commitment is no longer active.");
     const date = localToday(); if (date < item.startDate || date > item.endDate) throw new Error("Check-ins are only available during the commitment timeline.");
     if (item.checkIns.some((x) => x.date === date)) throw new Error("Today has already been logged.");
     const entry: CheckIn = { id: makeId(), commitmentId: id, userId: item.userId, date, outcome, note: note?.trim() || undefined, reason, createdAt: new Date().toISOString() };
