@@ -1,0 +1,8 @@
+<svg width="192" height="48" viewBox="0 0 192 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title">
+  <title id="title">LockIn logo</title>
+  <rect x="2" y="17" width="28" height="25" rx="3" stroke="#28221E" stroke-width="3"/>
+  <path d="M9 17V12C9 4 23 4 23 12V17" stroke="#28221E" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="16" cy="29" r="2.5" fill="#28221E"/>
+  <path d="M16 31.5V35" stroke="#28221E" stroke-width="3" stroke-linecap="round"/>
+  <text x="42" y="36" fill="#28221E" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" letter-spacing="-1.5">LockIn</text>
+</svg>
