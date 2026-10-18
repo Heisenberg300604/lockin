@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Hanken_Grotesk } from "next/font/google";
+import type { ReactNode } from "react";
 import "./globals.css";
 
 const hankenGrotesk = Hanken_Grotesk({
@@ -73,7 +74,7 @@ export const viewport: Viewport = {
   colorScheme: "light",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       {/* Extensions (ColorZilla and friends) write attributes onto <body> before
