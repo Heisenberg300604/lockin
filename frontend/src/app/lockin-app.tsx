@@ -12,6 +12,14 @@ const ruleText = (rule: GoalRule) => rule.type === "daily" ? "Every day" : rule.
 
 function LockIcon({ className = "" }: { className?: string }) { return <svg className={className} width="15" height="20" viewBox="0 0 15 20" fill="none" aria-hidden="true"><path d="M1.80768 19.4999C1.30896 19.4999.883006 19.3233.529803 18.9701C.176601 18.6169 0 18.1909 0 17.6922V8.30764C0 7.80893.176601 7.38297.529803 7.02977C.883006 6.67656 1.30896 6.49996 1.80768 6.49996H3V4.49996C3 3.25126 3.43782 2.18908 4.31345 1.31345C5.18908.437817 6.25126 0 7.49996 0C8.74867 0 9.81084.437817 10.6865 1.31345C11.5621 2.18908 11.9999 3.25126 11.9999 4.49996V6.49996H13.1922C13.691 6.49996 14.1169 6.67656 14.4701 7.02977C14.8233 7.38297 14.9999 7.80893 14.9999 8.30764V17.6922C14.9999 18.1909 14.8233 18.6169 14.4701 18.9701C14.1169 19.3233 13.691 19.4999 13.1922 19.4999H1.80768V17.9999H13.1922C13.282 17.9999 13.3557 17.9711 13.4134 17.9134C13.4711 17.8557 13.5 17.782 13.5 17.6922V8.30764C13.5 8.21789 13.4711 8.14417 13.4134 8.08647C13.3557 8.02878 13.282 7.99993 13.1922 7.99993H1.80768C1.71793 7.99993 1.6442 8.02878 1.58651 8.08647C1.52881 8.14417 1.49996 8.21789 1.49996 8.30764V17.6922C1.49996 17.782 1.52881 17.8557 1.58651 17.9134C1.6442 17.9711 1.71793 17.9999 1.80768 17.9999H7.49996C7.98586 17.9999 8.39899 14.5797 8.73937 14.2393C9.07975 13.899 9.24994 13.4858 9.24994 12.9999C9.24994 12.514 9.07975 12.1009 8.73937 11.7605C8.39899 11.4201 7.98586 11.2499 7.49996 11.2499C7.01407 11.2499 6.60093 11.4201 6.26055 11.7605C5.92017 12.1009 5.74998 12.514 5.74998 12.9999C5.74998 13.4858 5.92017 13.899 6.26055 14.2393C6.60093 14.5797 7.01407 14.7499 7.49996 14.7499V14.7499M4.49996 6.49996H10.5V4.49996C10.5 3.66663 10.2083 2.9583 9.62496 2.37496C9.04163 1.79163 8.3333 1.49996 7.49996 1.49996C6.66663 1.49996 5.9583 1.79163 5.37496 2.37496C4.79163 2.9583 4.49996 3.66663 4.49996 4.49996V6.49996Z" fill="#0D0805" /></svg>; }
 function GiftIcon({ className = "" }: { className?: string }) { return <svg className={className} width="91" height="91" viewBox="0 0 91 91" fill="none" aria-hidden="true"><path d="M45.4987 83.4163V45.4997M45.4987 83.4163H15.1654V45.4997M45.4987 83.4163H75.832V45.4997M45.4987 45.4997V26.5413M45.4987 45.4997H75.832M45.4987 45.4997H15.1654M45.4987 26.5413C40.4431 13.9025 34.1237 7.58301 26.5404 7.58301C24.0263 7.58301 21.6153 8.5817 19.8376 10.3594C18.0599 12.1371 17.0612 14.5481 17.0612 17.0622C17.0612 19.5762 18.0599 21.9873 19.8376 23.765C21.6153 25.5426 24.0263 26.5413 26.5404 26.5413M45.4987 26.5413C50.5543 13.9025 56.8737 7.58301 64.457 7.58301C66.9711 7.58301 69.3821 8.5817 71.1598 10.3594C72.9375 12.1371 73.9362 14.5481 73.9362 17.0622C73.9362 19.5762 72.9375 21.9873 71.1598 23.765C69.3821 25.5426 66.9711 26.5413 64.457 26.5413M45.4987 26.5413H26.5404M45.4987 26.5413H64.457M26.5404 26.5413H7.58203V45.4997H15.1654M64.457 26.5413H83.4154V45.4997H75.832" stroke="black" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" /></svg>; }
+const ICONS = {
+  target: <><circle cx="12" cy="12" r="8.6" /><circle cx="12" cy="12" r="3.3" /></>,
+  calendar: <><rect x="3.3" y="5" width="17.4" height="15.8" rx="2.4" /><path d="M3.3 10h17.4M8 3.2v3.6M16 3.2v3.6" /><path d="m9.6 15.2 1.8 1.8 3.4-3.6" /></>,
+  gift: <><path d="M3.6 11.4h16.8v3.1H3.6zM5.2 14.5h13.6v6.3H5.2zM12 11.4v9.4" /><path d="M12 11.4C10.2 6.9 8.3 4.6 6.5 4.6a2.6 2.6 0 0 0 0 5.2h5.5ZM12 11.4c1.8-4.5 3.7-6.8 5.5-6.8a2.6 2.6 0 0 1 0 5.2H12Z" /></>,
+  shield: <><path d="M12 3 5.4 5.6v5.7c0 4 2.7 7.2 6.6 9 3.9-1.8 6.6-5 6.6-9V5.6Z" /><path d="m9.3 11.8 2 2 3.5-3.7" /></>,
+} as const;
+
+function Icon({ name, className = "" }: { name: keyof typeof ICONS; className?: string }) { return <svg className={`icon ${className}`} width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[name]}</svg>; }
 function Brand() { return <div className="brand"><LockIcon className="lock-mark" /><span>LockIn</span></div>; }
 function Button({ children, className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement>) { return <button className={`button ${className}`} {...props}>{children}</button>; }
 function Status({ status }: { status: Commitment["status"] }) { const label = status === "broken" ? "Broken" : status[0].toUpperCase() + status.slice(1); return <span className={`status ${status}`}><i />{label}</span>; }
@@ -26,8 +34,22 @@ function RecentHistory({ item }: { item: Commitment }) {
   return <section className="recent-history"><p className="eyebrow">RECENT HISTORY</p><article className="history-calendar"><header><span>‹</span><h3>{monthName}</h3><span>›</span></header><div className="calendar-weekdays">{["M", "T", "W", "T", "F", "S", "S"].map((day, index) => <span key={`${day}${index}`}>{day}</span>)}</div><div className="calendar-days">{cells.map((day, index) => { if (!day) return <i key={`empty-${index}`} />; const key = dateKey(day); const outcome = checkins.get(key); return <span className={`${key === today ? "today" : ""} ${outcome === "kept" ? "kept" : ""} ${outcome === "broken" ? "broken" : ""}`} key={key}>{day}</span>; })}</div></article></section>;
 }
 
+const AUTH_POINTS = [
+  { icon: "target" as const, title: "Set the terms", copy: "Build a ritual or quit a pattern, on a timeline you choose." },
+  { icon: "calendar" as const, title: "Check in daily", copy: "Kept or broken — an honest record you can actually trust." },
+  { icon: "gift" as const, title: "Unlock the reward", copy: "Your motivation stays sealed until the finish line." },
+];
+
 function Login() {
-  return <main className="auth"><header><Brand /><span className="language">◎ English⌄</span></header><section className="auth-copy"><p className="eyebrow">A PROMISE TO YOURSELF</p><h1>Ready to Lock In?</h1><p>Sign in securely to protect your commitments, progress, and rewards.</p></section><section className="auth-card"><h2>Enter focus mode</h2><SignInButton mode="modal"><Button>ENTER FOCUS MODE</Button></SignInButton><div className="divider"><i />OR<i /></div><SignUpButton mode="modal"><Button className="secondary">START A NEW PROMISE</Button></SignUpButton><small>Authentication is provided by Clerk. LockIn never receives or stores your password.</small></section></main>;
+  return <main className="auth">
+    <header><Brand /><span className="auth-tag"><Icon name="shield" />Private by design</span></header>
+    <div className="auth-body">
+      <section className="auth-copy"><p className="eyebrow">A PROMISE TO YOURSELF</p><h1>Ready to Lock In?</h1><p>Sign in securely to protect your commitments, progress, and rewards.</p></section>
+      <ul className="auth-points">{AUTH_POINTS.map((point) => <li key={point.title}><Icon name={point.icon} /><span><b>{point.title}</b>{point.copy}</span></li>)}</ul>
+      <section className="auth-card"><h2>Enter focus mode</h2><p className="auth-card-sub">Pick up exactly where your last promise left off.</p><SignInButton mode="modal"><Button>ENTER FOCUS MODE</Button></SignInButton><div className="divider"><i />OR<i /></div><SignUpButton mode="modal"><Button className="secondary">START A NEW PROMISE</Button></SignUpButton><small>Authentication is provided by Clerk. LockIn never receives or stores your password.</small></section>
+    </div>
+    <footer className="auth-foot">Local-first · Commitments and check-ins stay in this browser.</footer>
+  </main>;
 }
 
 function Shell({ store, logout, children }: { store: LockInStore; logout: () => void; children: ReactNode }) {
