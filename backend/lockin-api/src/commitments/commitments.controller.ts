@@ -27,6 +27,7 @@ import { CreateCheckInDto } from './dto/create-check-in.dto.js';
 import { CreateCommitmentDto } from './dto/create-commitment.dto.js';
 import { ListCommitmentsDto } from './dto/list-commitments.dto.js';
 import { UpdateCommitmentDto } from './dto/update-commitment.dto.js';
+import { ImportCommitmentsDto } from './dto/import-commitments.dto.js';
 
 @ApiTags('commitments')
 @ApiBearerAuth('clerk')
@@ -39,6 +40,15 @@ export class CommitmentsController {
   @ApiCreatedResponse({ description: 'Commitment created.' })
   create(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateCommitmentDto) {
     return this.commitments.create(user.clerkId, input);
+  }
+
+  @Post('import')
+  @ApiOkResponse({ description: 'Legacy browser commitments imported exactly once per record.' })
+  importLegacy(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: ImportCommitmentsDto,
+  ) {
+    return this.commitments.importLegacy(user.clerkId, input);
   }
 
   @Get()

@@ -10,6 +10,7 @@ Protected endpoints require `Authorization: Bearer <Clerk session token>`.
 | GET | `/health/ready` | PostgreSQL readiness. |
 | GET/PATCH | `/me` | Read or update the caller's display name. |
 | POST/GET | `/commitments` | Create or list caller-owned commitments. |
+| POST | `/commitments/import` | Explicitly import browser-only legacy records, idempotently. |
 | GET/PATCH/DELETE | `/commitments/:id` | Read, edit active fields, or delete an owned commitment. |
 | POST | `/commitments/:id/check-ins` | Record one current-date outcome. |
 | POST | `/commitments/:id/pause` | Pause an active commitment. |

@@ -17,6 +17,7 @@ import { CreateCheckInDto } from './dto/create-check-in.dto.js';
 import { CreateCommitmentDto } from './dto/create-commitment.dto.js';
 import { ListCommitmentsDto } from './dto/list-commitments.dto.js';
 import { UpdateCommitmentDto } from './dto/update-commitment.dto.js';
+import { ImportCommitmentsDto, LegacyCommitmentDto } from './dto/import-commitments.dto.js';
 
 const dateFromKey = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const dateKey = (date: Date) => date.toISOString().slice(0, 10);
@@ -71,6 +72,71 @@ export class CommitmentsService {
       },
       include: { checkIns: true },
     });
+  }
+
+  /**
+   * Moves records created by the pre-API browser-only MVP into the signed-in
+   * member's account. legacyId makes retries safe and prevents duplicate rows.
+   */
+  async importLegacy(clerkId: string, input: ImportCommitmentsDto) {
+    const user = await this.users.getOrCreate(clerkId);
+    let imported = 0;
+    let skipped = 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of input.commitments) {
+        this.validateLegacyImport(item);
+        const alreadyImported = await tx.commitment.findFirst({
+          where: { userId: user.id, legacyId: item.legacyId },
+          select: { id: true },
+        });
+        if (alreadyImported) {
+          skipped += 1;
+          continue;
+        }
+
+        const createdAt = item.createdAt ? new Date(item.createdAt) : new Date();
+        const updatedAt = item.updatedAt ? new Date(item.updatedAt) : createdAt;
+        await tx.commitment.create({
+          data: {
+            userId: user.id,
+            legacyId: item.legacyId,
+            title: item.title.trim(),
+            description: item.description?.trim() || null,
+            kind: item.kind,
+            startDate: dateFromKey(item.startDate),
+            endDate: dateFromKey(item.endDate),
+            timeZone: item.timeZone,
+            ruleFrequency: item.ruleFrequency,
+            targetCount: item.targetCount,
+            windowDays: item.windowDays ?? null,
+            scheduledDays: [...(item.scheduledDays ?? [])].sort((a, b) => a - b),
+            reward: item.reward.trim(),
+            status: item.status,
+            pausedAt:
+              item.status === CommitmentStatus.PAUSED ? updatedAt : null,
+            completedAt: item.completedAt ? new Date(item.completedAt) : null,
+            brokenAt: item.brokenAt ? new Date(item.brokenAt) : null,
+            breakReason: item.breakReason?.trim() || null,
+            createdAt,
+            updatedAt,
+            checkIns: {
+              create: item.checkIns.map((entry) => ({
+                userId: user.id,
+                date: dateFromKey(entry.date),
+                outcome: entry.outcome,
+                note: entry.note?.trim() || null,
+                reason: entry.reason?.trim() || null,
+                createdAt: entry.createdAt ? new Date(entry.createdAt) : createdAt,
+              })),
+            },
+          },
+        });
+        imported += 1;
+      }
+    });
+
+    return { imported, skipped };
   }
 
   async list(clerkId: string, query: ListCommitmentsDto) {
@@ -231,6 +297,51 @@ export class CommitmentsService {
     }
     if (scheduledDays.length && scheduledDays.length !== input.targetCount) {
       throw new BadRequestException('A custom schedule must have one target for each selected day.');
+    }
+  }
+
+  private validateLegacyImport(input: LegacyCommitmentDto) {
+    if (input.endDate < input.startDate) {
+      throw new BadRequestException('An imported commitment has an invalid date range.');
+    }
+    if (daysBetween(input.startDate, input.endDate) + 1 > 365) {
+      throw new BadRequestException('An imported commitment exceeds the 365-day limit.');
+    }
+    if (input.kind === CommitmentKind.QUIT && (input.ruleFrequency !== RuleFrequency.DAILY || input.targetCount !== 1)) {
+      throw new BadRequestException('Imported quit commitments must use a daily target of one.');
+    }
+    if (input.ruleFrequency === RuleFrequency.DAILY && input.targetCount !== 1) {
+      throw new BadRequestException('Imported daily commitments must use a target of one.');
+    }
+    if (input.ruleFrequency === RuleFrequency.WEEKLY && input.targetCount > 7) {
+      throw new BadRequestException('Imported weekly targets cannot exceed seven.');
+    }
+    if (input.ruleFrequency === RuleFrequency.WINDOW) {
+      if (!input.windowDays || input.targetCount > input.windowDays) {
+        throw new BadRequestException('Imported window targets cannot exceed the window length.');
+      }
+    } else if (input.windowDays) {
+      throw new BadRequestException('windowDays is only valid for window rules.');
+    }
+    const scheduledDays = input.scheduledDays ?? [];
+    if (scheduledDays.length && input.ruleFrequency !== RuleFrequency.WEEKLY) {
+      throw new BadRequestException('Scheduled days are only valid for weekly rules.');
+    }
+    if (scheduledDays.length && scheduledDays.length !== input.targetCount) {
+      throw new BadRequestException('A custom schedule needs one target per selected day.');
+    }
+    const dates = new Set<string>();
+    for (const checkIn of input.checkIns) {
+      if (checkIn.date < input.startDate || checkIn.date > input.endDate) {
+        throw new BadRequestException('An imported check-in is outside its commitment timeline.');
+      }
+      if (dates.has(checkIn.date)) {
+        throw new BadRequestException('An imported commitment contains duplicate check-ins.');
+      }
+      dates.add(checkIn.date);
+      if (input.kind === CommitmentKind.BUILD && checkIn.outcome === CheckInOutcome.BROKEN) {
+        throw new BadRequestException('Build commitments cannot import broken check-ins.');
+      }
     }
   }
 

@@ -4,10 +4,15 @@ import { localRepository } from "@/lib/storage/lockin-store";
 import type { CheckIn, Commitment, CommitmentDraft, GoalRule, LocalProfile, ProgressSummary } from "@/types/commitment";
 
 const DAY = 86_400_000;
-export const localToday = () => {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-};
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v1").replace(/\/$/, "");
+type TokenProvider = () => Promise<string | null>;
+type Identity = { clerkId: string; email: string; name: string };
+type ApiProfile = { id: string; clerkId: string; displayName: string | null };
+type ApiCheckIn = { id: string; commitmentId: string; userId: string; date: string; outcome: "KEPT" | "BROKEN"; note: string | null; reason: string | null; createdAt: string; };
+type ApiCommitment = { id: string; userId: string; title: string; description: string | null; kind: "BUILD" | "QUIT"; startDate: string; endDate: string; ruleFrequency: "DAILY" | "WEEKLY" | "MONTHLY" | "WINDOW"; targetCount: number; windowDays: number | null; reward: string; status: "ACTIVE" | "PAUSED" | "COMPLETED" | "BROKEN"; createdAt: string; updatedAt: string; completedAt: string | null; brokenAt: string | null; breakReason: string | null; checkIns: ApiCheckIn[]; };
+let getAccessToken: TokenProvider | null = null;
+
+export const localToday = () => { const now = new Date(); return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10); };
 const parseDate = (value: string) => new Date(`${value}T12:00:00`);
 const plusDays = (value: string, days: number) => { const date = parseDate(value); date.setDate(date.getDate() + days); return date.toISOString().slice(0, 10); };
 export const daysBetween = (from: string, to: string) => Math.round((parseDate(to).getTime() - parseDate(from).getTime()) / DAY);
@@ -28,77 +33,35 @@ const periodEnd = (start: string, rule: GoalRule) => {
 };
 
 export function getProgress(item: Commitment, onDate = localToday()): ProgressSummary {
-  const durationDays = durationOf(item);
-  const elapsedDays = onDate < item.startDate ? 0 : Math.min(durationDays, daysBetween(item.startDate, onDate) + 1);
-  const reference = onDate < item.startDate ? item.startDate : onDate > item.endDate ? item.endDate : onDate;
-  const start = periodStart(reference, item.goalRule, item.startDate);
-  const end = periodEnd(start, item.goalRule);
-  const periodProgress = item.checkIns.filter((x) => x.outcome === "kept" && x.date >= start && x.date <= end).length;
-  const checkedToday = item.checkIns.some((x) => x.date === onDate);
-  return { elapsedDays, durationDays, daysRemaining: Math.max(0, durationDays - elapsedDays), elapsedPercent: Math.round(elapsedDays / durationDays * 100), successfulCheckIns: item.checkIns.filter((x) => x.outcome === "kept").length, periodLabel: item.goalRule.type === "daily" ? "Today" : item.goalRule.type === "weekly" ? "This week" : item.goalRule.type === "monthly" ? "This month" : `${item.goalRule.windowDays}-day window`, periodProgress, periodTarget: targetFor(item.goalRule), eligibleToday: item.status === "active" && onDate >= item.startDate && onDate <= item.endDate, checkedToday };
+  const durationDays = durationOf(item); const elapsedDays = onDate < item.startDate ? 0 : Math.min(durationDays, daysBetween(item.startDate, onDate) + 1); const reference = onDate < item.startDate ? item.startDate : onDate > item.endDate ? item.endDate : onDate; const start = periodStart(reference, item.goalRule, item.startDate); const end = periodEnd(start, item.goalRule); const periodProgress = item.checkIns.filter((x) => x.outcome === "kept" && x.date >= start && x.date <= end).length; const checkedToday = item.checkIns.some((x) => x.date === onDate); return { elapsedDays, durationDays, daysRemaining: Math.max(0, durationDays - elapsedDays), elapsedPercent: Math.round(elapsedDays / durationDays * 100), successfulCheckIns: item.checkIns.filter((x) => x.outcome === "kept").length, periodLabel: item.goalRule.type === "daily" ? "Today" : item.goalRule.type === "weekly" ? "This week" : item.goalRule.type === "monthly" ? "This month" : `${item.goalRule.windowDays}-day window`, periodProgress, periodTarget: targetFor(item.goalRule), eligibleToday: item.status === "active" && onDate >= item.startDate && onDate <= item.endDate, checkedToday };
 }
 
-function lifecycle(item: Commitment) {
-  if (item.status !== "active") return item;
-  const now = localToday();
-  // MVP policy: once a complete rule period ends short of its target, a build
-  // commitment fails. The active period is intentionally never judged early.
-  if (item.kind === "build" && now > item.startDate) {
-    const lastEligibleDay = now > item.endDate ? item.endDate : plusDays(now, -1);
-    const start = periodStart(lastEligibleDay, item.goalRule, item.startDate);
-    const end = periodEnd(start, item.goalRule);
-    if (end <= lastEligibleDay && end <= item.endDate) {
-      const count = item.checkIns.filter((entry) => entry.outcome === "kept" && entry.date >= start && entry.date <= end).length;
-      if (count < targetFor(item.goalRule)) {
-        const changedAt = new Date().toISOString();
-        return { ...item, status: "broken" as const, brokenAt: changedAt, breakReason: "The goal target was not met in a completed period.", updatedAt: changedAt };
-      }
-    }
-  }
-  if (now <= item.endDate) return item;
-  const final = getProgress(item, item.endDate);
-  const successful = item.kind === "quit" || final.periodProgress >= final.periodTarget;
-  const changedAt = new Date().toISOString();
-  return { ...item, status: successful ? "completed" as const : "broken" as const, completedAt: successful ? changedAt : undefined, brokenAt: successful ? undefined : changedAt, breakReason: successful ? undefined : "The final goal period was not met.", updatedAt: changedAt };
+function toRule(item: ApiCommitment): GoalRule { if (item.ruleFrequency === "DAILY") return { type: "daily" }; if (item.ruleFrequency === "WEEKLY") return { type: "weekly", target: item.targetCount }; if (item.ruleFrequency === "MONTHLY") return { type: "monthly", target: item.targetCount }; return { type: "window", target: item.targetCount, windowDays: item.windowDays ?? 1 }; }
+function fromApi(item: ApiCommitment): Commitment { return { id: item.id, userId: item.userId, title: item.title, description: item.description ?? undefined, kind: item.kind.toLowerCase() as Commitment["kind"], startDate: item.startDate.slice(0, 10), endDate: item.endDate.slice(0, 10), goalRule: toRule(item), reward: item.reward, status: item.status.toLowerCase() as Commitment["status"], createdAt: item.createdAt, updatedAt: item.updatedAt, completedAt: item.completedAt ?? undefined, brokenAt: item.brokenAt ?? undefined, breakReason: item.breakReason ?? undefined, checkIns: item.checkIns.map((entry) => ({ id: entry.id, commitmentId: entry.commitmentId, userId: entry.userId, date: entry.date.slice(0, 10), outcome: entry.outcome.toLowerCase() as CheckIn["outcome"], note: entry.note ?? undefined, reason: entry.reason ?? undefined, createdAt: entry.createdAt })) }; }
+function toApiRule(rule: GoalRule) { if (rule.type === "daily") return { ruleFrequency: "DAILY", targetCount: 1 }; if (rule.type === "weekly") return { ruleFrequency: "WEEKLY", targetCount: rule.target }; if (rule.type === "monthly") return { ruleFrequency: "MONTHLY", targetCount: rule.target }; return { ruleFrequency: "WINDOW", targetCount: rule.target, windowDays: rule.windowDays }; }
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = await getAccessToken?.(); if (!token) throw new Error("Your session expired. Please sign in again.");
+  const response = await fetch(`${API_URL}${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers } });
+  if (response.status === 204) return undefined as T;
+  const body = await response.json().catch(() => null) as { message?: string } | T | null;
+  if (!response.ok) throw new Error(body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : "The secure service could not complete that request.");
+  return body as T;
 }
 
-const makeId = () => crypto.randomUUID();
+function importPayload(item: Commitment) { return { legacyId: item.id, title: item.title, description: item.description, kind: item.kind.toUpperCase(), startDate: item.startDate, endDate: item.endDate, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", ...toApiRule(item.goalRule), reward: item.reward, status: item.status.toUpperCase(), completedAt: item.completedAt, brokenAt: item.brokenAt, breakReason: item.breakReason, createdAt: item.createdAt, updatedAt: item.updatedAt, checkIns: item.checkIns.map((entry) => ({ date: entry.date, outcome: entry.outcome.toUpperCase(), note: entry.note, reason: entry.reason, createdAt: entry.createdAt })) }; }
+
 export const commitmentService = {
-  async load() {
-    const session = await localRepository.getSession();
-    if (!session) return { session: null, commitments: [] };
-    const records = await localRepository.listCommitments(session.id);
-    const commitments = await Promise.all(records.map(async (record) => { const next = lifecycle(record); if (next !== record) await localRepository.saveCommitment(next); return next; }));
-    return { session, commitments };
-  },
-  async signIn(email: string, name: string) {
-    const normalized = email.trim().toLowerCase(); if (!normalized) throw new Error("Enter an email address to continue.");
-    const existing = await localRepository.findProfile(normalized); const now = new Date().toISOString();
-    const profile: LocalProfile = existing ? { ...existing, name: name.trim() || existing.name, updatedAt: now } : { id: makeId(), email: normalized, name: name.trim() || normalized.split("@")[0], createdAt: now, updatedAt: now };
-    await localRepository.saveProfile(profile); await localRepository.setSession(profile.id); return profile;
-  },
-  async signOut() { await localRepository.setSession(null); },
-  async create(userId: string, draft: CommitmentDraft) {
-    if (!draft.title.trim()) throw new Error("Give this commitment a name.");
-    if (draft.startDate < localToday()) throw new Error("Choose today or a future start date. Past dates cannot be checked in reliably.");
-    if (draft.endDate < draft.startDate) throw new Error("The end date must be after the start date.");
-    if (durationOf(draft) > 365) throw new Error("Keep a commitment within 365 days for this MVP.");
-    if (!Number.isInteger(targetFor(draft.goalRule)) || targetFor(draft.goalRule) < 1) throw new Error("Your target must be a whole number of at least one.");
-    if (targetFor(draft.goalRule) > maximumTargetFor(draft.goalRule)) throw new Error(`This goal cannot exceed ${maximumTargetFor(draft.goalRule)} successful days in its period.`);
-    const now = new Date().toISOString();
-    const item: Commitment = { ...draft, id: makeId(), userId, title: draft.title.trim(), description: draft.description?.trim(), reward: draft.reward.trim() || "A meaningful reward", status: "active", createdAt: now, updatedAt: now, checkIns: [] };
-    return localRepository.saveCommitment(item);
-  },
-  async update(id: string, patch: Partial<Commitment>) { const item = await localRepository.getCommitment(id); if (!item) throw new Error("This commitment no longer exists."); return localRepository.saveCommitment({ ...item, ...patch, updatedAt: new Date().toISOString() }); },
-  async remove(id: string) { await localRepository.deleteCommitment(id); },
-  async checkIn(id: string, outcome: CheckIn["outcome"], note?: string, reason?: string) {
-    const current = await localRepository.getCommitment(id); if (!current) throw new Error("This commitment no longer exists.");
-    const item = lifecycle(current); if (item !== current) await localRepository.saveCommitment(item); if (item.status !== "active") throw new Error("This commitment is no longer active.");
-    const date = localToday(); if (date < item.startDate || date > item.endDate) throw new Error("Check-ins are only available during the commitment timeline.");
-    if (item.checkIns.some((x) => x.date === date)) throw new Error("Today has already been logged.");
-    const entry: CheckIn = { id: makeId(), commitmentId: id, userId: item.userId, date, outcome, note: note?.trim() || undefined, reason, createdAt: new Date().toISOString() };
-    const next: Commitment = outcome === "broken" ? { ...item, checkIns: [...item.checkIns, entry], status: "broken", brokenAt: entry.createdAt, breakReason: reason, updatedAt: entry.createdAt } : { ...item, checkIns: [...item.checkIns, entry], updatedAt: entry.createdAt };
-    return localRepository.saveCommitment(next);
-  },
-  async clearAll() { await localRepository.clearAll(); },
+  configure(tokenProvider: TokenProvider | null) { getAccessToken = tokenProvider; },
+  async load(identity: Identity) { const profile = await request<ApiProfile>("/me"); const serverProfile = profile.displayName ? profile : await request<ApiProfile>("/me", { method: "PATCH", body: JSON.stringify({ displayName: identity.name }) }); const commitments = await request<ApiCommitment[]>("/commitments"); const session: LocalProfile = { id: identity.clerkId, email: identity.email, name: serverProfile.displayName || identity.name, createdAt: "", updatedAt: "" }; return { session, commitments: commitments.map(fromApi) }; },
+  async legacyImportSummary(identity: Identity) { try { if (await localRepository.getMeta(`legacy-import:${identity.clerkId}`)) return 0; const profile = await localRepository.findProfile(identity.email); if (!profile) return 0; return (await localRepository.listCommitments(profile.id)).length; } catch { return 0; } },
+  async importLegacy(identity: Identity) { const profile = await localRepository.findProfile(identity.email); if (!profile) return { imported: 0, skipped: 0 }; const commitments = await localRepository.listCommitments(profile.id); const result = await request<{ imported: number; skipped: number }>("/commitments/import", { method: "POST", body: JSON.stringify({ commitments: commitments.map(importPayload) }) }); await localRepository.setMeta(`legacy-import:${identity.clerkId}`, new Date().toISOString()); return result; },
+  async create(_userId: string, draft: CommitmentDraft) { if (!draft.title.trim()) throw new Error("Give this commitment a name."); if (draft.startDate < localToday()) throw new Error("Choose today or a future start date. Past dates cannot be checked in reliably."); if (draft.endDate < draft.startDate) throw new Error("The end date must be after the start date."); if (durationOf(draft) > 365) throw new Error("Keep a commitment within 365 days for this MVP."); if (!Number.isInteger(targetFor(draft.goalRule)) || targetFor(draft.goalRule) < 1) throw new Error("Your target must be a whole number of at least one."); if (targetFor(draft.goalRule) > maximumTargetFor(draft.goalRule)) throw new Error(`This goal cannot exceed ${maximumTargetFor(draft.goalRule)} successful days in its period.`); return fromApi(await request<ApiCommitment>("/commitments", { method: "POST", body: JSON.stringify({ title: draft.title.trim(), description: draft.description?.trim() || undefined, kind: draft.kind.toUpperCase(), startDate: draft.startDate, endDate: draft.endDate, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", ...toApiRule(draft.goalRule), reward: draft.reward.trim() || "A meaningful reward" }) })); },
+  async update(id: string, patch: Pick<Partial<Commitment>, "title" | "description" | "reward">) { return fromApi(await request<ApiCommitment>(`/commitments/${id}`, { method: "PATCH", body: JSON.stringify(patch) })); },
+  async pause(id: string) { return fromApi(await request<ApiCommitment>(`/commitments/${id}/pause`, { method: "POST" })); },
+  async resume(id: string) { return fromApi(await request<ApiCommitment>(`/commitments/${id}/resume`, { method: "POST" })); },
+  async remove(id: string) { await request<void>(`/commitments/${id}`, { method: "DELETE" }); },
+  async checkIn(id: string, outcome: CheckIn["outcome"], note?: string, reason?: string) { await request<ApiCheckIn>(`/commitments/${id}/check-ins`, { method: "POST", body: JSON.stringify({ outcome: outcome.toUpperCase(), note: note?.trim() || undefined, reason: reason?.trim() || undefined }) }); },
+  async updateProfile(displayName: string) { return request<ApiProfile>("/me", { method: "PATCH", body: JSON.stringify({ displayName }) }); },
+  async clearLocalCache() { await localRepository.clearAll(); },
 };

@@ -46,6 +46,7 @@ model UserProfile {
 model Commitment {
   id            String            @id @default(uuid()) @db.Uuid
   userId        String            @map("user_id") @db.Uuid
+  legacyId      String?           @map("legacy_id")
   title         String
   description   String?
   kind          CommitmentKind
@@ -69,6 +70,7 @@ model Commitment {
 
   @@index([userId, status, createdAt])
   @@index([userId, endDate])
+  @@unique([userId, legacyId])
   @@map("commitments")
 }
 

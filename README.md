@@ -41,7 +41,7 @@ It supports two kinds of commitments:
 - Commitment timelines, progress, reward previews, and check-in history.
 - Explicit breach logging for quit commitments.
 - Commitment status views for active, paused, completed, and broken records.
-- Browser-local profiles and persisted frontend data via IndexedDB.
+- Account-scoped commitments and check-ins persisted in Neon Postgres.
 - Clerk-powered sign-in/sign-up wiring; LockIn never handles user passwords.
 - NestJS API with PostgreSQL/Prisma schema, Clerk bearer-token verification, user-scoped commitment endpoints, health checks, rate limiting, and Swagger.
 
@@ -51,7 +51,7 @@ It supports two kinds of commitments:
 | --- | --- |
 | Frontend | Next.js 16, React 19, TypeScript |
 | Styling | Tailwind CSS 4 and custom CSS |
-| Local persistence | IndexedDB |
+| Data | Neon Postgres via NestJS API; IndexedDB only for one-time legacy import |
 | Backend | NestJS 12, Neon Postgres, Prisma 7, Clerk |
 | Validation & tests | ESLint, TypeScript, Vitest |
 | Deployment | Vercel |
@@ -120,11 +120,10 @@ lockin/
 
 ## Data & privacy
 
-The current frontend retains commitment data in IndexedDB while the new API client migration is completed. Browser-local records are not silently uploaded or synchronized between devices. Clerk now owns browser authentication; LockIn never handles passwords.
+Commitments, check-ins, and profile changes are stored in the signed-in member's account in Neon Postgres. Clerk owns authentication, and LockIn never handles passwords. Existing browser-only records are discovered by email and require an explicit, one-time user-confirmed import; they are never silently uploaded.
 
 ## Roadmap
 
-- Migrate the IndexedDB commitment repository to the authenticated NestJS API without silently importing existing local records.
 - Link the selected Clerk application and supply development/production keys.
 - Expand automated coverage for commitment-rule evaluation and end-to-end flows.
 - Add richer completion and reward experiences.

@@ -34,6 +34,19 @@ function request<T>(value: IDBRequest<T>): Promise<T> {
 }
 
 export const localRepository = {
+  async getMeta(key: string) {
+    const db = await openDb();
+    const saved = await request<{ key: string; value: string } | undefined>(
+      db.transaction(META_STORE).objectStore(META_STORE).get(key),
+    );
+    return saved?.value ?? null;
+  },
+  async setMeta(key: string, value: string) {
+    const db = await openDb();
+    await request(
+      db.transaction(META_STORE, "readwrite").objectStore(META_STORE).put({ key, value }),
+    );
+  },
   async getSession(): Promise<LocalProfile | null> {
     const db = await openDb(); const tx = db.transaction([META_STORE, PROFILE_STORE], "readonly");
     const saved = await request<{ key: string; value: string } | undefined>(tx.objectStore(META_STORE).get("session"));
