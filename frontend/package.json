@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:live": "NEXT_PUBLIC_API_URL=https://lockin-a0os.onrender.com/api/v1 next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
