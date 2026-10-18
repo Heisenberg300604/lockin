@@ -76,7 +76,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en">
-      <body className={hankenGrotesk.variable}><ClerkProvider dynamic appearance={clerkAppearance}>{children}</ClerkProvider><Analytics /></body>
+      {/* Extensions (ColorZilla and friends) write attributes onto <body> before
+          hydration; suppress the attribute diff on this element only. */}
+      <body className={hankenGrotesk.variable} suppressHydrationWarning><ClerkProvider dynamic appearance={clerkAppearance}>{children}</ClerkProvider><Analytics /></body>
     </html>
   );
 }
