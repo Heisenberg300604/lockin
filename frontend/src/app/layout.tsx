@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
+import { ClerkProvider } from "@clerk/nextjs";
 import { Hanken_Grotesk } from "next/font/google";
 import "./globals.css";
 
@@ -17,7 +18,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en">
-      <body className={hankenGrotesk.variable}>{children}<Analytics /></body>
+      <body className={hankenGrotesk.variable} suppressHydrationWarning>
+        <ClerkProvider dynamic>{children}</ClerkProvider>
+        <Analytics />
+      </body>
     </html>
   );
 }

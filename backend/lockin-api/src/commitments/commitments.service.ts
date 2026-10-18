@@ -1,0 +1,247 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  CheckInOutcome,
+  CommitmentKind,
+  CommitmentStatus,
+  Prisma,
+  RuleFrequency,
+} from '../generated/prisma/client.js';
+import { PrismaService } from '../database/prisma.service.js';
+import { UsersService } from '../users/users.service.js';
+import { CreateCheckInDto } from './dto/create-check-in.dto.js';
+import { CreateCommitmentDto } from './dto/create-commitment.dto.js';
+import { ListCommitmentsDto } from './dto/list-commitments.dto.js';
+import { UpdateCommitmentDto } from './dto/update-commitment.dto.js';
+
+const dateFromKey = (value: string) => new Date(`${value}T00:00:00.000Z`);
+const dateKey = (date: Date) => date.toISOString().slice(0, 10);
+const daysBetween = (from: string, to: string) =>
+  Math.round((dateFromKey(to).getTime() - dateFromKey(from).getTime()) / 86_400_000);
+const addDays = (value: string, days: number) => {
+  const date = dateFromKey(value);
+  date.setUTCDate(date.getUTCDate() + days);
+  return dateKey(date);
+};
+
+function todayIn(timeZone: string) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((item) => item.type === type)?.value;
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  } catch {
+    throw new BadRequestException('timeZone must be a valid IANA time zone.');
+  }
+}
+
+@Injectable()
+export class CommitmentsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly users: UsersService,
+  ) {}
+
+  async create(clerkId: string, input: CreateCommitmentDto) {
+    this.validateCreateInput(input);
+    const user = await this.users.getOrCreate(clerkId);
+    return this.prisma.commitment.create({
+      data: {
+        userId: user.id,
+        title: input.title.trim(),
+        description: input.description?.trim() || null,
+        kind: input.kind,
+        startDate: dateFromKey(input.startDate),
+        endDate: dateFromKey(input.endDate),
+        timeZone: input.timeZone,
+        ruleFrequency: input.ruleFrequency,
+        targetCount: input.targetCount,
+        windowDays: input.windowDays ?? null,
+        scheduledDays: [...(input.scheduledDays ?? [])].sort((a, b) => a - b),
+        reward: input.reward.trim(),
+      },
+      include: { checkIns: true },
+    });
+  }
+
+  async list(clerkId: string, query: ListCommitmentsDto) {
+    await this.users.getOrCreate(clerkId);
+    return this.prisma.commitment.findMany({
+      where: { user: { clerkId }, ...(query.status ? { status: query.status } : {}) },
+      include: { checkIns: { orderBy: { date: 'asc' } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async get(clerkId: string, id: string) {
+    return this.findOwned(clerkId, id);
+  }
+
+  async update(clerkId: string, id: string, input: UpdateCommitmentDto) {
+    const commitment = await this.findOwned(clerkId, id);
+    if (commitment.status !== CommitmentStatus.ACTIVE) {
+      throw new ConflictException('Only active commitments can be edited.');
+    }
+    return this.prisma.commitment.update({
+      where: { id },
+      data: {
+        ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+        ...(input.description !== undefined
+          ? { description: input.description.trim() || null }
+          : {}),
+        ...(input.reward !== undefined ? { reward: input.reward.trim() } : {}),
+      },
+      include: { checkIns: { orderBy: { date: 'asc' } } },
+    });
+  }
+
+  async pause(clerkId: string, id: string) {
+    const commitment = await this.findOwned(clerkId, id);
+    if (commitment.status !== CommitmentStatus.ACTIVE) {
+      throw new ConflictException('Only active commitments can be paused.');
+    }
+    return this.prisma.commitment.update({
+      where: { id },
+      data: { status: CommitmentStatus.PAUSED, pausedAt: new Date() },
+    });
+  }
+
+  async resume(clerkId: string, id: string) {
+    const commitment = await this.findOwned(clerkId, id);
+    if (commitment.status !== CommitmentStatus.PAUSED || !commitment.pausedAt) {
+      throw new ConflictException('Only paused commitments can be resumed.');
+    }
+    const pausedDay = this.dateInCommitmentZone(commitment.pausedAt, commitment.timeZone);
+    const resumedDay = todayIn(commitment.timeZone);
+    const extension = Math.max(0, daysBetween(pausedDay, resumedDay));
+    return this.prisma.commitment.update({
+      where: { id },
+      data: {
+        status: CommitmentStatus.ACTIVE,
+        pausedAt: null,
+        endDate: dateFromKey(addDays(dateKey(commitment.endDate), extension)),
+      },
+    });
+  }
+
+  async checkIn(clerkId: string, id: string, input: CreateCheckInDto) {
+    const commitment = await this.findOwned(clerkId, id);
+    if (commitment.status !== CommitmentStatus.ACTIVE) {
+      throw new ConflictException('This commitment is not active.');
+    }
+    const today = todayIn(commitment.timeZone);
+    if (today < dateKey(commitment.startDate) || today > dateKey(commitment.endDate)) {
+      throw new ConflictException('Check-ins are only available during the commitment timeline.');
+    }
+    if (commitment.kind === CommitmentKind.BUILD && input.outcome === CheckInOutcome.BROKEN) {
+      throw new BadRequestException('Build commitments can only record a kept check-in.');
+    }
+    if (
+      commitment.scheduledDays.length > 0 &&
+      !commitment.scheduledDays.includes(this.isoWeekday(today))
+    ) {
+      throw new ConflictException('Today is not a scheduled execution day.');
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const entry = await tx.checkIn.create({
+          data: {
+            commitmentId: commitment.id,
+            userId: commitment.userId,
+            date: dateFromKey(today),
+            outcome: input.outcome,
+            note: input.note?.trim() || null,
+            reason: input.reason?.trim() || null,
+          },
+        });
+        if (input.outcome === CheckInOutcome.BROKEN) {
+          await tx.commitment.update({
+            where: { id: commitment.id },
+            data: {
+              status: CommitmentStatus.BROKEN,
+              brokenAt: new Date(),
+              breakReason: input.reason?.trim() || 'Commitment broken.',
+            },
+          });
+        }
+        return entry;
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Today has already been logged.');
+      }
+      throw error;
+    }
+  }
+
+  async remove(clerkId: string, id: string) {
+    await this.findOwned(clerkId, id);
+    await this.prisma.commitment.delete({ where: { id } });
+  }
+
+  private async findOwned(clerkId: string, id: string) {
+    const commitment = await this.prisma.commitment.findFirst({
+      where: { id, user: { clerkId } },
+      include: { checkIns: { orderBy: { date: 'asc' } } },
+    });
+    if (!commitment) throw new NotFoundException('Commitment not found.');
+    return commitment;
+  }
+
+  private validateCreateInput(input: CreateCommitmentDto) {
+    if (input.endDate < input.startDate) {
+      throw new BadRequestException('The end date must not precede the start date.');
+    }
+    if (daysBetween(input.startDate, input.endDate) + 1 > 365) {
+      throw new BadRequestException('A commitment may not exceed 365 days.');
+    }
+    const today = todayIn(input.timeZone);
+    if (input.startDate < today) {
+      throw new BadRequestException('The start date cannot be in the past.');
+    }
+    if (input.kind === CommitmentKind.QUIT && (input.ruleFrequency !== RuleFrequency.DAILY || input.targetCount !== 1)) {
+      throw new BadRequestException('Quit commitments must use a daily target of one.');
+    }
+    if (input.ruleFrequency === RuleFrequency.DAILY && input.targetCount !== 1) {
+      throw new BadRequestException('Daily commitments must use a target of one.');
+    }
+    if (input.ruleFrequency === RuleFrequency.WEEKLY && input.targetCount > 7) {
+      throw new BadRequestException('Weekly targets cannot exceed seven.');
+    }
+    if (input.ruleFrequency === RuleFrequency.WINDOW) {
+      if (!input.windowDays || input.targetCount > input.windowDays) {
+        throw new BadRequestException('Window targets cannot exceed the window length.');
+      }
+    } else if (input.windowDays) {
+      throw new BadRequestException('windowDays is only valid for window rules.');
+    }
+    const scheduledDays = input.scheduledDays ?? [];
+    if (scheduledDays.length && input.ruleFrequency !== RuleFrequency.WEEKLY) {
+      throw new BadRequestException('Scheduled days are only valid for weekly rules.');
+    }
+    if (scheduledDays.length && scheduledDays.length !== input.targetCount) {
+      throw new BadRequestException('A custom schedule must have one target for each selected day.');
+    }
+  }
+
+  private dateInCommitmentZone(value: Date, timeZone: string) {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value);
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
+    return `${part('year')}-${part('month')}-${part('day')}`;
+  }
+
+  private isoWeekday(date: string) {
+    const weekday = dateFromKey(date).getUTCDay();
+    return weekday === 0 ? 7 : weekday;
+  }
+}

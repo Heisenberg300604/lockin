@@ -42,8 +42,8 @@ It supports two kinds of commitments:
 - Explicit breach logging for quit commitments.
 - Commitment status views for active, paused, completed, and broken records.
 - Browser-local profiles and persisted frontend data via IndexedDB.
-- Simulated frontend authentication for development; no real passwords are stored.
-- NestJS API workspace ready to evolve into a backed product experience.
+- Clerk-powered sign-in/sign-up wiring; LockIn never handles user passwords.
+- NestJS API with PostgreSQL/Prisma schema, Clerk bearer-token verification, user-scoped commitment endpoints, health checks, rate limiting, and Swagger.
 
 ## Tech stack
 
@@ -52,7 +52,7 @@ It supports two kinds of commitments:
 | Frontend | Next.js 16, React 19, TypeScript |
 | Styling | Tailwind CSS 4 and custom CSS |
 | Local persistence | IndexedDB |
-| Backend foundation | NestJS 12, TypeScript |
+| Backend | NestJS 12, Neon Postgres, Prisma 7, Clerk |
 | Validation & tests | ESLint, TypeScript, Vitest |
 | Deployment | Vercel |
 
@@ -81,15 +81,18 @@ npx tsc --noEmit
 npm run build
 ```
 
-### Run the API foundation
+### Run the API
 
 ```bash
 cd backend/lockin-api
+cp .env.example .env
 npm install
+npm run db:generate
+npm run db:migrate:deploy
 npm run start:dev
 ```
 
-The API starts on the port configured by NestJS. See [backend setup notes](docs/backend-setup.md) for the intended API architecture and environment setup.
+The API starts at `http://localhost:3001`. See [backend setup notes](docs/backend-setup.md) for environment setup, [API documentation](docs/api.md) for routes, and [authentication notes](docs/authentication.md) for Clerk linking.
 
 ## Project structure
 
@@ -117,14 +120,12 @@ lockin/
 
 ## Data & privacy
 
-The current frontend stores its local profile, commitments, and check-ins in the browser with IndexedDB. This data is not synchronized between devices and is not sent to a service by the frontend implementation. Clear browser storage to remove it.
-
-The sign-in interface is a local development simulation. It is not production authentication and never stores a password.
+The current frontend retains commitment data in IndexedDB while the new API client migration is completed. Browser-local records are not silently uploaded or synchronized between devices. Clerk now owns browser authentication; LockIn never handles passwords.
 
 ## Roadmap
 
-- Connect the frontend repository contract to the NestJS API.
-- Add production authentication and user-scoped server persistence.
+- Migrate the IndexedDB commitment repository to the authenticated NestJS API without silently importing existing local records.
+- Link the selected Clerk application and supply development/production keys.
 - Expand automated coverage for commitment-rule evaluation and end-to-end flows.
 - Add richer completion and reward experiences.
 

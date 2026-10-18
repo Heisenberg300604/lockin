@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CommitmentKind {
+  BUILD
+  QUIT
+}
+
+enum CommitmentStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  BROKEN
+}
+
+enum RuleFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  WINDOW
+}
+
+enum CheckInOutcome {
+  KEPT
+  BROKEN
+}
+
+model UserProfile {
+  id          String       @id @default(uuid()) @db.Uuid
+  clerkId     String       @unique @map("clerk_id")
+  displayName String?      @map("display_name")
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  commitments Commitment[]
+  checkIns    CheckIn[]
+
+  @@map("user_profiles")
+}
+
+model Commitment {
+  id            String            @id @default(uuid()) @db.Uuid
+  userId        String            @map("user_id") @db.Uuid
+  title         String
+  description   String?
+  kind          CommitmentKind
+  startDate     DateTime          @map("start_date") @db.Date
+  endDate       DateTime          @map("end_date") @db.Date
+  timeZone      String            @map("time_zone")
+  ruleFrequency RuleFrequency     @map("rule_frequency")
+  targetCount   Int               @map("target_count")
+  windowDays    Int?              @map("window_days")
+  scheduledDays Int[]             @default([]) @map("scheduled_days")
+  reward        String
+  status        CommitmentStatus  @default(ACTIVE)
+  pausedAt      DateTime?         @map("paused_at") @db.Timestamptz(3)
+  completedAt   DateTime?         @map("completed_at") @db.Timestamptz(3)
+  brokenAt      DateTime?         @map("broken_at") @db.Timestamptz(3)
+  breakReason   String?           @map("break_reason")
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user          UserProfile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkIns      CheckIn[]
+
+  @@index([userId, status, createdAt])
+  @@index([userId, endDate])
+  @@map("commitments")
+}
+
+model CheckIn {
+  id           String          @id @default(uuid()) @db.Uuid
+  commitmentId String          @map("commitment_id") @db.Uuid
+  userId       String          @map("user_id") @db.Uuid
+  date         DateTime        @db.Date
+  outcome      CheckInOutcome
+  note         String?
+  reason       String?
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  commitment   Commitment      @relation(fields: [commitmentId], references: [id], onDelete: Cascade)
+  user         UserProfile     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commitmentId, date])
+  @@index([userId, date])
+  @@map("check_ins")
+}

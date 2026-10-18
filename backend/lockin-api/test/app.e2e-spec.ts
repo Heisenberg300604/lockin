@@ -1,26 +1,29 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
-import { AppModule } from './../src/app.module.js';
+import { HealthController } from './../src/health/health.controller.js';
+import { PrismaService } from './../src/database/prisma.service.js';
 
-describe('AppController (e2e)', () => {
+describe('HealthController (e2e)', () => {
   let app: INestApplication<App>;
 
   beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
+    const moduleFixture = await Test.createTestingModule({
+      controllers: [HealthController],
+      providers: [{ provide: PrismaService, useValue: {} }],
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api');
     await app.init();
   });
 
-  it('/ (GET)', () => {
+  it('/api/health/live (GET)', () => {
     return request(app.getHttpServer())
-      .get('/')
+      .get('/api/health/live')
       .expect(200)
-      .expect('Hello World!');
+      .expect({ status: 'ok', service: 'lockin-api' });
   });
 
   afterEach(async () => {
