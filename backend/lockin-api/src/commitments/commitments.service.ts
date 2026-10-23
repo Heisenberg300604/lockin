@@ -23,6 +23,7 @@ const dateFromKey = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const dateKey = (date: Date) => date.toISOString().slice(0, 10);
 const daysBetween = (from: string, to: string) =>
   Math.round((dateFromKey(to).getTime() - dateFromKey(from).getTime()) / 86_400_000);
+const LATE_CHECK_IN_GRACE_DAYS = 2;
 const addDays = (value: string, days: number) => {
   const date = dateFromKey(value);
   date.setUTCDate(date.getUTCDate() + days);
@@ -205,7 +206,14 @@ export class CommitmentsService {
       throw new ConflictException('This commitment is not active.');
     }
     const today = todayIn(commitment.timeZone);
-    if (today < dateKey(commitment.startDate) || today > dateKey(commitment.endDate)) {
+    const checkInDate = input.date ?? today;
+    if (checkInDate > today) {
+      throw new ConflictException('Future dates cannot be logged.');
+    }
+    if (daysBetween(checkInDate, today) > LATE_CHECK_IN_GRACE_DAYS) {
+      throw new ConflictException('Check-ins may only be backfilled for the previous two days.');
+    }
+    if (checkInDate < dateKey(commitment.startDate) || checkInDate > dateKey(commitment.endDate)) {
       throw new ConflictException('Check-ins are only available during the commitment timeline.');
     }
     if (commitment.kind === CommitmentKind.BUILD && input.outcome === CheckInOutcome.BROKEN) {
@@ -213,7 +221,7 @@ export class CommitmentsService {
     }
     if (
       commitment.scheduledDays.length > 0 &&
-      !commitment.scheduledDays.includes(this.isoWeekday(today))
+      !commitment.scheduledDays.includes(this.isoWeekday(checkInDate))
     ) {
       throw new ConflictException('Today is not a scheduled execution day.');
     }
@@ -224,7 +232,7 @@ export class CommitmentsService {
           data: {
             commitmentId: commitment.id,
             userId: commitment.userId,
-            date: dateFromKey(today),
+            date: dateFromKey(checkInDate),
             outcome: input.outcome,
             note: input.note?.trim() || null,
             reason: input.reason?.trim() || null,
@@ -244,7 +252,7 @@ export class CommitmentsService {
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('Today has already been logged.');
+        throw new ConflictException('This date has already been logged.');
       }
       throw error;
     }

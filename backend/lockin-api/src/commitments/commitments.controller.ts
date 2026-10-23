@@ -76,7 +76,7 @@ export class CommitmentsController {
   }
 
   @Post(':id/check-ins')
-  @ApiCreatedResponse({ description: 'Current-date check-in recorded.' })
+  @ApiCreatedResponse({ description: 'Commitment check-in recorded.' })
   @ApiConflictResponse({ description: 'Duplicate, unscheduled, or inactive commitment check-in.' })
   checkIn(
     @CurrentUser() user: AuthenticatedUser,
