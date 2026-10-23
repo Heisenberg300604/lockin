@@ -34,6 +34,7 @@ export interface Commitment {
   kind: CommitmentKind;
   startDate: string;
   endDate: string;
+  timeZone: string;
   goalRule: GoalRule;
   reward: string;
   status: CommitmentStatus;
