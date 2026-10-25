@@ -35,3 +35,8 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run build
+      - name: SEO check (raw HTML, robots.txt, sitemap, noindex)
+        run: |
+          npm start -- -p 3100 &
+          for attempt in $(seq 1 30); do curl -sf http://localhost:3100/robots.txt > /dev/null && break; sleep 1; done
+          npm run seo:check -- http://localhost:3100

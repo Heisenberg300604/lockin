@@ -7,7 +7,8 @@
     "dev:live": "NEXT_PUBLIC_API_URL=https://lockin-a0os.onrender.com/api/v1 next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seo:check": "node scripts/seo-check.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.17",
