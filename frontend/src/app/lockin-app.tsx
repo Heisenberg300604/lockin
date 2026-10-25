@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { SignInButton, SignUpButton, useAuth, useClerk, useUser } from "@clerk/nextjs";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { commitmentService, daysBetween, durationOf, getProgress, localToday } from "@/lib/services/commitment-service";
 import type { Commitment, GoalRule, LockInStore } from "@/types/commitment";
@@ -66,7 +67,7 @@ function Login() {
       <section className="auth-card"><h2>Enter focus mode</h2><p className="auth-card-sub">Pick up exactly where your last promise left off.</p><SignInButton mode="modal"><Button>ENTER FOCUS MODE</Button></SignInButton><div className="divider"><i />OR<i /></div><SignUpButton mode="modal"><Button className="secondary">START A NEW PROMISE</Button></SignUpButton><small>Authentication is provided by Clerk. LockIn never receives or stores your password.</small></section>
       <ul className="auth-points">{AUTH_POINTS.map((point) => <li key={point.title}><Icon name={point.icon} /><span><b>{point.title}</b>{point.copy}</span></li>)}</ul>
     </div>
-    <footer className="auth-foot">Private by default · Commitments and check-ins sync to your account.</footer>
+    <footer className="auth-foot">Private by default · Commitments and check-ins sync to your account. · <Link href="/about">How LockIn works</Link></footer>
   </main>;
 }
 
