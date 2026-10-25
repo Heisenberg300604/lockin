@@ -40,12 +40,16 @@ export const absoluteUrl = (path = "/") => new URL(path, `${SITE_URL}/`).toStrin
 
 // Pages assign `openGraph` wholesale (Next shallow-merges metadata per key), so
 // every indexable page goes through this helper to keep the tags complete.
+// The share image is listed explicitly too: a page-level `openGraph` object
+// replaces the image inherited from app/opengraph-image.tsx in child routes.
+const SHARE_IMAGE = { url: "/opengraph-image", width: 1200, height: 630, alt: `${SITE_NAME} — ${TAGLINE}` };
+
 export function pageMetadata({ title, description, path }: { title: string; description: string; path: string }): Metadata {
   return {
     title: { absolute: title },
     description,
     alternates: { canonical: path },
-    openGraph: { type: "website", siteName: SITE_NAME, locale: LOCALE, url: path, title, description },
-    twitter: { card: "summary_large_image", title, description },
+    openGraph: { type: "website", siteName: SITE_NAME, locale: LOCALE, url: path, title, description, images: [SHARE_IMAGE] },
+    twitter: { card: "summary_large_image", title, description, images: [SHARE_IMAGE] },
   };
 }
