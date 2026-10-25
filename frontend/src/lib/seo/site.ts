@@ -23,8 +23,8 @@ export const PRODUCT = {
     "Cadence for build habits: every day, or a weekly target such as three times a week",
     "Quit habits are tracked every day; one slip is recorded and ends the commitment",
     "Daily kept/broken check-ins with a calendar, and backfill for the previous two days",
-    "A personal reward that stays locked until the commitment is complete",
-    "Pause and resume a commitment without losing its history",
+    "A reward you choose up front, waiting for you at the finish line",
+    "Pause and resume a commitment; the end date moves back by the paused days",
     "Private account: sign-in is handled by Clerk and LockIn never receives your password",
   ],
 } as const;
