@@ -3,6 +3,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Hanken_Grotesk } from "next/font/google";
 import type { ReactNode } from "react";
+import { LOCALE, PRODUCT, SITE_NAME, SITE_URL, TAGLINE } from "@/lib/seo/site";
 import "./globals.css";
 
 const hankenGrotesk = Hanken_Grotesk({
@@ -60,9 +61,15 @@ const clerkAppearance = {
   },
 };
 
+// Site-wide defaults. Indexable pages override title/description/canonical via
+// pageMetadata(); app screens under [...slug] inherit these and are noindexed.
 export const metadata: Metadata = {
-  title: "LockIn — Keep promises to yourself",
-  description: "A private focus space for meaningful commitments.",
+  metadataBase: new URL(SITE_URL),
+  title: { default: `${SITE_NAME} — ${TAGLINE}`, template: `%s · ${SITE_NAME}` },
+  description: PRODUCT.summary,
+  applicationName: SITE_NAME,
+  openGraph: { type: "website", siteName: SITE_NAME, locale: LOCALE },
+  twitter: { card: "summary_large_image" },
   appleWebApp: { capable: true, title: "LockIn", statusBarStyle: "default" },
 };
 
