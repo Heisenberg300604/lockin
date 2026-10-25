@@ -9,6 +9,9 @@ Use the committed `.env.example` files as templates. Never commit `.env`, `.env.
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Yes | Clerk browser SDK key. |
 | `CLERK_SECRET_KEY` | Yes | Next.js server/proxy key; never exposed to client code. |
 | `NEXT_PUBLIC_API_URL` | Yes for API migration | Nest API base URL. |
+| `NEXT_PUBLIC_SITE_URL` | No | Public origin for canonicals, sitemap, robots.txt, Open Graph and JSON-LD. Defaults to `https://lockin-web-app.vercel.app`; set it when moving to a custom domain. |
+| `GOOGLE_SITE_VERIFICATION` | No | Google Search Console HTML-tag token; renders `<meta name="google-site-verification">` when set. |
+| `BING_SITE_VERIFICATION` | No | Bing Webmaster Tools token; renders `<meta name="msvalidate.01">` when set. |
 
 ## Backend
 

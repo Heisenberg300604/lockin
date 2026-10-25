@@ -70,6 +70,11 @@ export const metadata: Metadata = {
   applicationName: SITE_NAME,
   openGraph: { type: "website", siteName: SITE_NAME, locale: LOCALE },
   twitter: { card: "summary_large_image" },
+  // Search Console / Bing Webmaster ownership tokens; tags render only when set.
+  verification: {
+    google: process.env.GOOGLE_SITE_VERIFICATION,
+    other: process.env.BING_SITE_VERIFICATION ? { "msvalidate.01": process.env.BING_SITE_VERIFICATION } : undefined,
+  },
   appleWebApp: { capable: true, title: "LockIn", statusBarStyle: "default" },
 };
 
