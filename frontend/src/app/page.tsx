@@ -6,7 +6,7 @@ import { JsonLd, appNode, websiteNode } from "@/lib/seo/json-ld";
 import { PRODUCT, pageMetadata } from "@/lib/seo/site";
 
 export const metadata: Metadata = pageMetadata({
-  title: "LockIn — Habit Tracker for Building and Quitting Habits",
+  title: "LockIn — Habit Tracker with Rewards to Build or Quit Habits",
   description: PRODUCT.summary,
   path: "/",
 });
