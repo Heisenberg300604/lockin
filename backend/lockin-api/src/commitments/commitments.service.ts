@@ -18,17 +18,16 @@ import { CreateCommitmentDto } from './dto/create-commitment.dto.js';
 import { ListCommitmentsDto } from './dto/list-commitments.dto.js';
 import { UpdateCommitmentDto } from './dto/update-commitment.dto.js';
 import { ImportCommitmentsDto, LegacyCommitmentDto } from './dto/import-commitments.dto.js';
-
-const dateFromKey = (value: string) => new Date(`${value}T00:00:00.000Z`);
-const dateKey = (date: Date) => date.toISOString().slice(0, 10);
-const daysBetween = (from: string, to: string) =>
-  Math.round((dateFromKey(to).getTime() - dateFromKey(from).getTime()) / 86_400_000);
-const LATE_CHECK_IN_GRACE_DAYS = 2;
-const addDays = (value: string, days: number) => {
-  const date = dateFromKey(value);
-  date.setUTCDate(date.getUTCDate() + days);
-  return dateKey(date);
-};
+import {
+  addDays,
+  DAILY_BACKFILL_DAYS,
+  dateFromKey,
+  dateKey,
+  daysBetween,
+  evaluateLifecycle,
+  isoWeekday,
+  validatePeriodFeasibility,
+} from './commitment-lifecycle.js';
 
 function todayIn(timeZone: string) {
   try {
@@ -142,18 +141,25 @@ export class CommitmentsService {
 
   async list(clerkId: string, query: ListCommitmentsDto) {
     await this.users.getOrCreate(clerkId);
+    await this.reconcileOwnedActiveCommitments(clerkId);
     return this.prisma.commitment.findMany({
       where: { user: { clerkId }, ...(query.status ? { status: query.status } : {}) },
-      include: { checkIns: { orderBy: { date: 'asc' } } },
+      ...(query.includeCheckIns === false
+        ? {}
+        : { include: { checkIns: { orderBy: { date: 'asc' } } } }),
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async get(clerkId: string, id: string) {
+    const commitment = await this.findOwned(clerkId, id);
+    await this.reconcile(commitment);
     return this.findOwned(clerkId, id);
   }
 
   async update(clerkId: string, id: string, input: UpdateCommitmentDto) {
+    const existing = await this.findOwned(clerkId, id);
+    await this.reconcile(existing);
     const commitment = await this.findOwned(clerkId, id);
     if (commitment.status !== CommitmentStatus.ACTIVE) {
       throw new ConflictException('Only active commitments can be edited.');
@@ -172,6 +178,8 @@ export class CommitmentsService {
   }
 
   async pause(clerkId: string, id: string) {
+    const existing = await this.findOwned(clerkId, id);
+    await this.reconcile(existing);
     const commitment = await this.findOwned(clerkId, id);
     if (commitment.status !== CommitmentStatus.ACTIVE) {
       throw new ConflictException('Only active commitments can be paused.');
@@ -201,6 +209,8 @@ export class CommitmentsService {
   }
 
   async checkIn(clerkId: string, id: string, input: CreateCheckInDto) {
+    const existing = await this.findOwned(clerkId, id);
+    await this.reconcile(existing);
     const commitment = await this.findOwned(clerkId, id);
     if (commitment.status !== CommitmentStatus.ACTIVE) {
       throw new ConflictException('This commitment is not active.');
@@ -210,7 +220,7 @@ export class CommitmentsService {
     if (checkInDate > today) {
       throw new ConflictException('Future dates cannot be logged.');
     }
-    if (daysBetween(checkInDate, today) > LATE_CHECK_IN_GRACE_DAYS) {
+    if (daysBetween(checkInDate, today) > DAILY_BACKFILL_DAYS) {
       throw new ConflictException('Check-ins may only be backfilled for the previous two days.');
     }
     if (checkInDate < dateKey(commitment.startDate) || checkInDate > dateKey(commitment.endDate)) {
@@ -221,7 +231,7 @@ export class CommitmentsService {
     }
     if (
       commitment.scheduledDays.length > 0 &&
-      !commitment.scheduledDays.includes(this.isoWeekday(checkInDate))
+      !commitment.scheduledDays.includes(isoWeekday(checkInDate))
     ) {
       throw new ConflictException('Today is not a scheduled execution day.');
     }
@@ -272,6 +282,38 @@ export class CommitmentsService {
     return commitment;
   }
 
+  private async reconcileOwnedActiveCommitments(clerkId: string) {
+    const commitments = await this.prisma.commitment.findMany({
+      where: { status: CommitmentStatus.ACTIVE, user: { clerkId } },
+      include: { checkIns: { orderBy: { date: 'asc' } } },
+    });
+    await Promise.all(commitments.map((commitment) => this.reconcile(commitment)));
+  }
+
+  /**
+   * Status transitions are derived from immutable check-ins and persisted here,
+   * before user-visible reads and mutations. A future scheduler can call this
+   * same rule without changing the source of truth.
+   */
+  private async reconcile(commitment: Awaited<ReturnType<CommitmentsService['findOwned']>>) {
+    const transition = evaluateLifecycle(commitment, todayIn(commitment.timeZone));
+    if (!transition) return;
+    await this.prisma.commitment.updateMany({
+      where: { id: commitment.id, status: CommitmentStatus.ACTIVE },
+      data:
+        'reason' in transition
+          ? {
+              status: CommitmentStatus.BROKEN,
+              brokenAt: new Date(),
+              breakReason: transition.reason,
+            }
+          : {
+              status: CommitmentStatus.COMPLETED,
+              completedAt: new Date(),
+            },
+    });
+  }
+
   private validateCreateInput(input: CreateCommitmentDto) {
     if (input.endDate < input.startDate) {
       throw new BadRequestException('The end date must not precede the start date.');
@@ -306,6 +348,15 @@ export class CommitmentsService {
     if (scheduledDays.length && scheduledDays.length !== input.targetCount) {
       throw new BadRequestException('A custom schedule must have one target for each selected day.');
     }
+    const feasibilityError = validatePeriodFeasibility({
+      startDate: dateFromKey(input.startDate),
+      endDate: dateFromKey(input.endDate),
+      ruleFrequency: input.ruleFrequency,
+      windowDays: input.windowDays ?? null,
+      targetCount: input.targetCount,
+      scheduledDays,
+    });
+    if (feasibilityError) throw new BadRequestException(feasibilityError);
   }
 
   private validateLegacyImport(input: LegacyCommitmentDto) {
@@ -359,8 +410,4 @@ export class CommitmentsService {
     return `${part('year')}-${part('month')}-${part('day')}`;
   }
 
-  private isoWeekday(date: string) {
-    const weekday = dateFromKey(date).getUTCDay();
-    return weekday === 0 ? 7 : weekday;
-  }
 }

@@ -3,7 +3,7 @@ export type CommitmentStatus = "active" | "paused" | "completed" | "broken";
 
 export type GoalRule =
   | { type: "daily" }
-  | { type: "weekly"; target: number }
+  | { type: "weekly"; target: number; scheduledDays?: number[] }
   | { type: "monthly"; target: number }
   | { type: "window"; target: number; windowDays: number };
 
@@ -44,6 +44,8 @@ export interface Commitment {
   brokenAt?: string;
   breakReason?: string;
   checkIns: CheckIn[];
+  /** Check-in history is fetched only for the currently opened commitment. */
+  checkInsLoaded?: boolean;
 }
 
 export interface CommitmentDraft {
@@ -65,6 +67,8 @@ export interface ProgressSummary {
   periodLabel: string;
   periodProgress: number;
   periodTarget: number;
+  periodSecured: boolean;
+  periodState: "secured" | "on-track" | "at-risk";
   eligibleToday: boolean;
   checkedToday: boolean;
 }

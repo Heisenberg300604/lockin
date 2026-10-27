@@ -156,7 +156,7 @@ All endpoints except `/health/*` require the bearer token.
 
 ### Commitments
 
-**`GET /commitments?status=ACTIVE`** → `200` `Commitment[]` (newest first, each with `checkIns`). `status` query is optional (`ACTIVE|PAUSED|COMPLETED|BROKEN`); an invalid value → `400`.
+**`GET /commitments?status=ACTIVE`** → `200` `Commitment[]` (newest first, each with `checkIns`). `status` is optional (`ACTIVE|PAUSED|COMPLETED|BROKEN`). Use `includeCheckIns=false` for a lightweight list response; then load `GET /commitments/:id` when opening the detail screen. Invalid query values → `400`.
 
 **`GET /commitments/:id`** → `200` Commitment with `checkIns`; `404` if missing or not yours.
 
@@ -219,7 +219,9 @@ Example:
 **`POST /commitments/import`** — web-only migration of old browser data. **Do not implement in mobile.**
 
 ### Behaviour notes
-- In the current backend the status `COMPLETED` is never set automatically (only via legacy import). Treat a commitment whose `endDate` has passed (and status is `ACTIVE`) as finished **on the client**.
+- The backend reconciles active commitments before reads and mutations. It persists `BROKEN` when a completed build-rule period is short of target and `COMPLETED` when an unbroken commitment finishes. Do not infer or mutate lifecycle status on the client.
+- Flexible weekly/monthly/window goals use a minimum count per period. Reaching the target before the period ends secures that period; skipped remaining days do not affect the commitment. Weekly `scheduledDays` are different: every selected weekday is required.
+- Daily build commitments allow late logs for the preceding two days. Weekly, monthly, and window periods have no late-log grace after they close.
 - No pagination: `GET /commitments` returns everything the user owns.
 
 ---

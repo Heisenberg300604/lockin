@@ -130,18 +130,22 @@ body { overflow-x:hidden; }
 .calendar-days button.unlogged { cursor:pointer; background:#f3e4c8; box-shadow:inset 0 0 0 1px #b97922; }
 .calendar-days button.unlogged:hover:not(:disabled),.calendar-days button.unlogged:focus-visible { background:#e8c98d; outline:2px solid var(--ink); outline-offset:1px; }
 .calendar-days button.kept { background:#bfe1d2; box-shadow:inset 0 0 0 2px #0b775b; }
-.calendar-days button.late-kept { background:#d1e6dc; color:#075039; box-shadow:inset 0 0 0 2px #0b775b; }
+.calendar-days button.late-kept { position:relative; background:#e8dcff; color:#48206c; box-shadow:inset 0 0 0 2px #6d38b1; }
+.calendar-days button.late-kept::after { content:"↺"; position:absolute; right:2px; bottom:0; color:#6d38b1; font-size:9px; font-weight:800; line-height:1; }
 .calendar-days button.broken { background:#e4c0bd; box-shadow:inset 0 0 0 2px #ad3026; }
 .calendar-days button.upcoming { color:#766d65; box-shadow:inset 0 0 0 1px #d6cec4; }
 .calendar-days button.outside,.calendar-days button.inactive { color:#b9b1a8; }
 .calendar-days button.expired { color:#a69e96; text-decoration:line-through; }
 .calendar-days button.today { width:35px; justify-self:center; border-radius:50%; background:var(--ink); color:#fff; box-shadow:none; }
 .calendar-days button.today.kept { background:#08795b; box-shadow:inset 0 0 0 2px #075039; }
-.calendar-days button.today.late-kept { background:#08795b; box-shadow:inset 0 0 0 2px #075039; }
+.calendar-days button.today.late-kept { background:#6d38b1; color:#fff; box-shadow:inset 0 0 0 2px #48206c; }
 .calendar-days button.today.unlogged { background:#a66512; box-shadow:inset 0 0 0 2px #754303; }
 .calendar-days button.today.broken { background:#ad3026; box-shadow:inset 0 0 0 2px #7d1f18; }
 @media (max-width:760px) { .calendar-days button { min-height:38px; } }
-.calendar-legend .late-kept i { border-color:#0b775b; background:#d1e6dc; }
+.calendar-legend .late-kept { color:#48206c; }
+.calendar-legend .late-kept i { border-color:#6d38b1; background:#e8dcff; }
+.history-loading { min-height:270px; display:grid; align-content:center; justify-items:center; gap:9px; color:#675c53; border-style:dashed; }
+.history-loading b { font-size:14px; }
 .edit-reward { grid-column:2; justify-self:start; padding:7px 10px; border:1px solid #7d7268; background:transparent; color:#4e443c; font-size:10px; font-weight:800; letter-spacing:.8px; }
 .edit-reward:hover { border-color:var(--ink); background:#f8f5ef; color:var(--ink); }
 @media (max-width:760px) { .edit-reward { grid-column:2; } }

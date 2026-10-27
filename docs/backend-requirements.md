@@ -21,7 +21,7 @@ LockIn is a time-bound commitment tracker. A person creates a commitment to eith
 | Sign in / profile | Local email-and-name simulation; password input is ignored; “Google” is a demo shortcut. | Replace with Clerk on the frontend; server trusts verified Clerk tokens only. Store an app profile only for the editable display name and timestamps. |
 | Dashboard | Lists the current local profile's commitments, status filters, counts, and empty state. | User-scoped commitment list with status filtering. |
 | Commitment builder | Six steps: kind, title/description, dates, pace, reward, and review. | Create endpoint with server validation. |
-| Build rules | Daily or weekly target. The type contract also supports monthly and fixed windows, although the current builder exposes daily and weekly only. | Preserve all four rule variants in the API schema, validate their bounds, and keep unsupported builder options out of scope for UI integration. |
+| Build rules | Daily, flexible weekly/monthly targets, fixed weekdays, and fixed windows. | Evaluate every completed rule period server-side; flexible targets are minimum counts, fixed weekdays require each selected day. |
 | Quit rules | The builder always creates a daily rule. | Enforce daily-only quit commitments on the server. |
 | Check-ins | One entry per commitment and local date. Build: successful log; quit: kept or broken. A broken outcome immediately breaks the commitment. | User-scoped, idempotency-safe one-per-date endpoint. |
 | Lifecycle | Active, paused, completed, broken. The local service evaluates expired and missed completed periods at read/check-in time. | Move the same evaluation to a server domain service and persist status changes. |
@@ -45,13 +45,17 @@ Observed rules from `commitment-service.ts`:
 
 ### Check-ins and lifecycle
 
-Observed rules:
+Implemented rules:
 
 - A check-in can only be recorded while a commitment is active and inside its timeline.
 - A commitment has at most one check-in for a calendar date.
 - A quit-habit `broken` check-in immediately changes its status to `broken` and records the selected reason.
-- A build commitment becomes `broken` when a fully completed rule period falls short of its target. The current period is not evaluated early.
-- At the end of a commitment, quit commitments complete if unbroken. Build commitments complete only if their final rule period meets its target; otherwise they become broken.
+- A flexible weekly, monthly, or fixed-window build goal succeeds as soon as its minimum count is reached; further check-ins in that period are optional.
+- A build commitment becomes `broken` when a completed weekly, monthly, or fixed-window period falls short of its target. There is no grace period for those frequencies.
+- Daily build commitments retain a two-day late-log allowance; an unlogged day breaks the commitment when that allowance closes.
+- Fixed weekly schedules use `scheduledDays`: each selected weekday is required, unlike a flexible weekly target.
+- At the end of a commitment, quit commitments complete if unbroken. Build commitments complete only after every rule period—including the final partial period—has met its target; otherwise they become broken.
+- The API reconciles lifecycle status before commitment reads and mutations, so status does not depend on browser-only calculations.
 - Pause/resume currently changes only the status. The local implementation does not change dates or retroactively adjudicate paused days.
 
 ### Calendar semantics
