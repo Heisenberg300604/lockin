@@ -46,7 +46,7 @@ function fromApi(item: ApiCommitment): Commitment { return { id: item.id, userId
 function toApiRule(rule: GoalRule) { if (rule.type === "daily") return { ruleFrequency: "DAILY", targetCount: 1 }; if (rule.type === "weekly") return { ruleFrequency: "WEEKLY", targetCount: rule.target, ...(rule.scheduledDays?.length ? { scheduledDays: rule.scheduledDays } : {}) }; if (rule.type === "monthly") return { ruleFrequency: "MONTHLY", targetCount: rule.target }; return { ruleFrequency: "WINDOW", targetCount: rule.target, windowDays: rule.windowDays }; }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = await getAccessToken?.(); if (!token) throw new Error("Your session expired. Please sign in again.");
+  const token = await getAccessToken?.(); if (!token) throw new Error("Your secure session is still initializing. Please retry in a moment.");
   const response = await fetch(`${API_URL}${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers } });
   if (response.status === 204) return undefined as T;
   const body = await response.json().catch(() => null) as { message?: string } | T | null;
