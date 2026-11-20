@@ -29,6 +29,9 @@ enum RuleFrequency {
 enum CheckInOutcome {
   KEPT
   BROKEN
+  // "Not today" on a flexible build commitment: an honest response that does
+  // not count toward the target but does reset the inactivity rule.
+  SKIPPED
 }
 
 model UserProfile {
@@ -63,6 +66,9 @@ model Commitment {
   completedAt   DateTime?         @map("completed_at") @db.Timestamptz(3)
   brokenAt      DateTime?         @map("broken_at") @db.Timestamptz(3)
   breakReason   String?           @map("break_reason")
+  /// First calendar day the inactivity rule watches (3 silent days break the
+  /// commitment). Reset on resume. NULL exempts the commitment from the rule.
+  inactivityStart DateTime?       @map("inactivity_start") @db.Date
   createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
   user          UserProfile       @relation(fields: [userId], references: [id], onDelete: Cascade)
