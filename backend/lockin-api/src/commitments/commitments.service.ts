@@ -20,6 +20,7 @@ import { UpdateCommitmentDto } from './dto/update-commitment.dto.js';
 import { ImportCommitmentsDto, LegacyCommitmentDto } from './dto/import-commitments.dto.js';
 import {
   addDays,
+  allowsSkip,
   DAILY_BACKFILL_DAYS,
   dateFromKey,
   dateKey,
@@ -69,6 +70,7 @@ export class CommitmentsService {
         windowDays: input.windowDays ?? null,
         scheduledDays: [...(input.scheduledDays ?? [])].sort((a, b) => a - b),
         reward: input.reward.trim(),
+        inactivityStart: dateFromKey(input.startDate),
       },
       include: { checkIns: true },
     });
@@ -113,6 +115,8 @@ export class CommitmentsService {
             scheduledDays: [...(item.scheduledDays ?? [])].sort((a, b) => a - b),
             reward: item.reward.trim(),
             status: item.status,
+            // Imported history may contain old gaps; only watch from today.
+            inactivityStart: dateFromKey(todayIn(item.timeZone)),
             pausedAt:
               item.status === CommitmentStatus.PAUSED ? updatedAt : null,
             completedAt: item.completedAt ? new Date(item.completedAt) : null,
@@ -204,6 +208,8 @@ export class CommitmentsService {
         status: CommitmentStatus.ACTIVE,
         pausedAt: null,
         endDate: dateFromKey(addDays(dateKey(commitment.endDate), extension)),
+        // Paused days are not silence: the inactivity rule restarts today.
+        inactivityStart: dateFromKey(resumedDay),
       },
     });
   }
@@ -227,7 +233,12 @@ export class CommitmentsService {
       throw new ConflictException('Check-ins are only available during the commitment timeline.');
     }
     if (commitment.kind === CommitmentKind.BUILD && input.outcome === CheckInOutcome.BROKEN) {
-      throw new BadRequestException('Build commitments can only record a kept check-in.');
+      throw new BadRequestException('Build commitments cannot record a broken check-in.');
+    }
+    if (input.outcome === CheckInOutcome.SKIPPED && !allowsSkip(commitment)) {
+      throw new BadRequestException(
+        '"Not today" is only available for flexible weekly, monthly, or window commitments.',
+      );
     }
     if (
       commitment.scheduledDays.length > 0 &&
@@ -248,16 +259,19 @@ export class CommitmentsService {
             reason: input.reason?.trim() || null,
           },
         });
-        if (input.outcome === CheckInOutcome.BROKEN) {
-          await tx.commitment.update({
-            where: { id: commitment.id },
-            data: {
-              status: CommitmentStatus.BROKEN,
-              brokenAt: new Date(),
-              breakReason: input.reason?.trim() || 'Commitment broken.',
-            },
-          });
-        }
+        // Always touch the commitment so every client's cached copy (keyed by
+        // updatedAt) knows its check-in history changed.
+        await tx.commitment.update({
+          where: { id: commitment.id },
+          data:
+            input.outcome === CheckInOutcome.BROKEN
+              ? {
+                  status: CommitmentStatus.BROKEN,
+                  brokenAt: new Date(),
+                  breakReason: input.reason?.trim() || 'Commitment broken.',
+                }
+              : { updatedAt: new Date() },
+        });
         return entry;
       });
     } catch (error) {
@@ -400,6 +414,9 @@ export class CommitmentsService {
       dates.add(checkIn.date);
       if (input.kind === CommitmentKind.BUILD && checkIn.outcome === CheckInOutcome.BROKEN) {
         throw new BadRequestException('Build commitments cannot import broken check-ins.');
+      }
+      if (input.kind === CommitmentKind.QUIT && checkIn.outcome === CheckInOutcome.SKIPPED) {
+        throw new BadRequestException('Quit commitments cannot import skipped check-ins.');
       }
     }
   }

@@ -7,6 +7,8 @@ import {
 
 const DAY_MS = 86_400_000;
 export const DAILY_BACKFILL_DAYS = 2;
+/** Consecutive eligible days with no check-in at all that break a commitment. */
+export const INACTIVITY_BREAK_DAYS = 3;
 
 export type LifecycleCheckIn = {
   date: Date;
@@ -22,6 +24,8 @@ export type LifecycleCommitment = {
   targetCount: number;
   windowDays: number | null;
   scheduledDays: number[];
+  /** First day watched by the inactivity rule; null exempts the commitment. */
+  inactivityStart?: Date | null;
   checkIns: LifecycleCheckIn[];
 };
 
@@ -113,8 +117,53 @@ function completionIsDue(input: LifecycleCommitment, today: string) {
     : today > lastPeriod.end;
 }
 
+/**
+ * "Not today" is an answer only for flexible build paces: a missed day on a
+ * daily or fixed-weekday commitment already breaks it.
+ */
+export function allowsSkip(input: Pick<LifecycleCommitment, 'kind' | 'ruleFrequency' | 'scheduledDays'>) {
+  return (
+    input.kind === CommitmentKind.BUILD &&
+    input.ruleFrequency !== RuleFrequency.DAILY &&
+    input.scheduledDays.length === 0
+  );
+}
+
+/**
+ * Finds the first run of INACTIVITY_BREAK_DAYS consecutive eligible days that
+ * are over (before today) and have no check-in of any outcome. Days before
+ * `inactivityStart` (creation, resume, or the rule's rollout) never count.
+ */
+export function silentRun(input: LifecycleCommitment, today: string): RulePeriod | null {
+  if (!input.inactivityStart) return null;
+  const watchedFrom = dateKey(input.inactivityStart);
+  const from = watchedFrom > dateKey(input.startDate) ? watchedFrom : dateKey(input.startDate);
+  const to = minDate(addDays(today, -1), dateKey(input.endDate));
+  if (from > to) return null;
+
+  const answered = new Set(input.checkIns.map((entry) => dateKey(entry.date)));
+  const run: string[] = [];
+  for (const day of eligibleDays({ start: from, end: to }, input.scheduledDays)) {
+    if (answered.has(day)) {
+      run.length = 0;
+      continue;
+    }
+    run.push(day);
+    if (run.length >= INACTIVITY_BREAK_DAYS) return { start: run[0], end: day };
+  }
+  return null;
+}
+
 export function evaluateLifecycle(input: LifecycleCommitment, today: string): LifecycleTransition {
   if (input.status !== CommitmentStatus.ACTIVE) return null;
+
+  const silent = silentRun(input, today);
+  if (silent) {
+    return {
+      status: CommitmentStatus.BROKEN,
+      reason: `No check-in for ${INACTIVITY_BREAK_DAYS} days in a row (${silent.start} to ${silent.end}).`,
+    };
+  }
 
   if (input.kind === CommitmentKind.QUIT) {
     return today > dateKey(input.endDate) ? { status: CommitmentStatus.COMPLETED } : null;

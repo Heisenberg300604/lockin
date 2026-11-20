@@ -8,8 +8,8 @@ const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api/v
 type TokenProvider = () => Promise<string | null>;
 type Identity = { clerkId: string; email: string; name: string };
 type ApiProfile = { id: string; clerkId: string; displayName: string | null };
-type ApiCheckIn = { id: string; commitmentId: string; userId: string; date: string; outcome: "KEPT" | "BROKEN"; note: string | null; reason: string | null; createdAt: string; };
-type ApiCommitment = { id: string; userId: string; title: string; description: string | null; kind: "BUILD" | "QUIT"; startDate: string; endDate: string; timeZone: string; ruleFrequency: "DAILY" | "WEEKLY" | "MONTHLY" | "WINDOW"; targetCount: number; windowDays: number | null; scheduledDays: number[]; reward: string; status: "ACTIVE" | "PAUSED" | "COMPLETED" | "BROKEN"; createdAt: string; updatedAt: string; completedAt: string | null; brokenAt: string | null; breakReason: string | null; checkIns?: ApiCheckIn[]; };
+type ApiCheckIn = { id: string; commitmentId: string; userId: string; date: string; outcome: "KEPT" | "BROKEN" | "SKIPPED"; note: string | null; reason: string | null; createdAt: string; };
+type ApiCommitment = { id: string; userId: string; title: string; description: string | null; kind: "BUILD" | "QUIT"; startDate: string; endDate: string; timeZone: string; ruleFrequency: "DAILY" | "WEEKLY" | "MONTHLY" | "WINDOW"; targetCount: number; windowDays: number | null; scheduledDays: number[]; reward: string; status: "ACTIVE" | "PAUSED" | "COMPLETED" | "BROKEN"; createdAt: string; updatedAt: string; completedAt: string | null; brokenAt: string | null; breakReason: string | null; inactivityStart?: string | null; checkIns?: ApiCheckIn[]; };
 let getAccessToken: TokenProvider | null = null;
 const accountCache = new Map<string, LockInStore>();
 const accountLoads = new Map<string, Promise<LockInStore>>();
@@ -36,13 +36,27 @@ const periodEnd = (start: string, rule: GoalRule) => {
 };
 const isoWeekday = (date: string) => { const day = parseDate(date).getDay(); return day === 0 ? 7 : day; };
 const scheduledDaysFor = (rule: GoalRule) => rule.type === "weekly" ? rule.scheduledDays ?? [] : [];
+/** Days in a row without any check-in that break a commitment (mirrors the API). */
+export const INACTIVITY_BREAK_DAYS = 3;
+
+/** "Not today" exists only for flexible build paces; on daily or fixed-weekday goals a missed day already breaks the commitment. */
+export const allowsSkip = (item: Pick<Commitment, "kind" | "goalRule">) => item.kind === "build" && item.goalRule.type !== "daily" && !scheduledDaysFor(item.goalRule).length;
+
+/** How many eligible days in a row, ending yesterday, have no check-in at all. Mirrors the API's inactivity rule. */
+export function silentDays(item: Commitment, today = localToday()) {
+  if (!item.inactivityStart || item.status !== "active") return 0;
+  const from = item.inactivityStart > item.startDate ? item.inactivityStart : item.startDate; const scheduledDays = scheduledDaysFor(item.goalRule); const answered = new Set(item.checkIns.map((entry) => entry.date)); let count = 0;
+  for (let date = plusDays(today, -1); date >= from; date = plusDays(date, -1)) { if (date > item.endDate || (scheduledDays.length && !scheduledDays.includes(isoWeekday(date)))) continue; if (answered.has(date)) break; count += 1; }
+  return count;
+}
 
 export function getProgress(item: Commitment, onDate = localToday()): ProgressSummary {
   const durationDays = durationOf(item); const elapsedDays = onDate < item.startDate ? 0 : Math.min(durationDays, daysBetween(item.startDate, onDate) + 1); const reference = onDate < item.startDate ? item.startDate : onDate > item.endDate ? item.endDate : onDate; const start = periodStart(reference, item.goalRule, item.startDate); const end = periodEnd(start, item.goalRule); const scheduledDays = scheduledDaysFor(item.goalRule); const periodProgress = item.checkIns.filter((x) => x.outcome === "kept" && x.date >= start && x.date <= end).length; const checkedToday = item.checkIns.some((x) => x.date === onDate); const periodTarget = targetFor(item.goalRule); const periodSecured = periodProgress >= periodTarget; let remainingOpportunities = 0; for (let date = onDate > start ? onDate : start; date <= end && date <= item.endDate; date = plusDays(date, 1)) { if ((!scheduledDays.length || scheduledDays.includes(isoWeekday(date))) && !item.checkIns.some((entry) => entry.date === date)) remainingOpportunities += 1; } const periodState = periodSecured ? "secured" : periodProgress + remainingOpportunities < periodTarget ? "at-risk" : "on-track"; return { elapsedDays, durationDays, daysRemaining: Math.max(0, durationDays - elapsedDays), elapsedPercent: Math.round(elapsedDays / durationDays * 100), successfulCheckIns: item.checkIns.filter((x) => x.outcome === "kept").length, periodLabel: item.goalRule.type === "daily" ? "Today" : item.goalRule.type === "weekly" ? "This week" : item.goalRule.type === "monthly" ? "This month" : `${item.goalRule.windowDays}-day window`, periodProgress, periodTarget, periodSecured, periodState, eligibleToday: item.status === "active" && onDate >= item.startDate && onDate <= item.endDate && (!scheduledDays.length || scheduledDays.includes(isoWeekday(onDate))), checkedToday };
 }
 
+const checkInFromApi = (entry: ApiCheckIn): CheckIn => ({ id: entry.id, commitmentId: entry.commitmentId, userId: entry.userId, date: entry.date.slice(0, 10), outcome: entry.outcome.toLowerCase() as CheckIn["outcome"], note: entry.note ?? undefined, reason: entry.reason ?? undefined, createdAt: entry.createdAt });
 function toRule(item: ApiCommitment): GoalRule { if (item.ruleFrequency === "DAILY") return { type: "daily" }; if (item.ruleFrequency === "WEEKLY") return { type: "weekly", target: item.targetCount, ...(item.scheduledDays.length ? { scheduledDays: item.scheduledDays } : {}) }; if (item.ruleFrequency === "MONTHLY") return { type: "monthly", target: item.targetCount }; return { type: "window", target: item.targetCount, windowDays: item.windowDays ?? 1 }; }
-function fromApi(item: ApiCommitment): Commitment { return { id: item.id, userId: item.userId, title: item.title, description: item.description ?? undefined, kind: item.kind.toLowerCase() as Commitment["kind"], startDate: item.startDate.slice(0, 10), endDate: item.endDate.slice(0, 10), timeZone: item.timeZone, goalRule: toRule(item), reward: item.reward, status: item.status.toLowerCase() as Commitment["status"], createdAt: item.createdAt, updatedAt: item.updatedAt, completedAt: item.completedAt ?? undefined, brokenAt: item.brokenAt ?? undefined, breakReason: item.breakReason ?? undefined, checkIns: (item.checkIns ?? []).map((entry) => ({ id: entry.id, commitmentId: entry.commitmentId, userId: entry.userId, date: entry.date.slice(0, 10), outcome: entry.outcome.toLowerCase() as CheckIn["outcome"], note: entry.note ?? undefined, reason: entry.reason ?? undefined, createdAt: entry.createdAt })), checkInsLoaded: item.checkIns !== undefined }; }
+function fromApi(item: ApiCommitment): Commitment { return { id: item.id, userId: item.userId, title: item.title, description: item.description ?? undefined, kind: item.kind.toLowerCase() as Commitment["kind"], startDate: item.startDate.slice(0, 10), endDate: item.endDate.slice(0, 10), timeZone: item.timeZone, goalRule: toRule(item), reward: item.reward, status: item.status.toLowerCase() as Commitment["status"], createdAt: item.createdAt, updatedAt: item.updatedAt, completedAt: item.completedAt ?? undefined, brokenAt: item.brokenAt ?? undefined, breakReason: item.breakReason ?? undefined, inactivityStart: item.inactivityStart?.slice(0, 10), checkIns: (item.checkIns ?? []).map(checkInFromApi), checkInsLoaded: item.checkIns !== undefined }; }
 function toApiRule(rule: GoalRule) { if (rule.type === "daily") return { ruleFrequency: "DAILY", targetCount: 1 }; if (rule.type === "weekly") return { ruleFrequency: "WEEKLY", targetCount: rule.target, ...(rule.scheduledDays?.length ? { scheduledDays: rule.scheduledDays } : {}) }; if (rule.type === "monthly") return { ruleFrequency: "MONTHLY", targetCount: rule.target }; return { ruleFrequency: "WINDOW", targetCount: rule.target, windowDays: rule.windowDays }; }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -69,7 +83,7 @@ export const commitmentService = {
   async pause(id: string) { return fromApi(await request<ApiCommitment>(`/commitments/${id}/pause`, { method: "POST" })); },
   async resume(id: string) { return fromApi(await request<ApiCommitment>(`/commitments/${id}/resume`, { method: "POST" })); },
   async remove(id: string) { await request<void>(`/commitments/${id}`, { method: "DELETE" }); },
-  async checkIn(id: string, outcome: CheckIn["outcome"], note?: string, reason?: string, date?: string) { await request<ApiCheckIn>(`/commitments/${id}/check-ins`, { method: "POST", body: JSON.stringify({ outcome: outcome.toUpperCase(), date, note: note?.trim() || undefined, reason: reason?.trim() || undefined }) }); },
+  async checkIn(id: string, outcome: CheckIn["outcome"], note?: string, reason?: string, date?: string) { return checkInFromApi(await request<ApiCheckIn>(`/commitments/${id}/check-ins`, { method: "POST", body: JSON.stringify({ outcome: outcome.toUpperCase(), date, note: note?.trim() || undefined, reason: reason?.trim() || undefined }) })); },
   async updateProfile(displayName: string) { return request<ApiProfile>("/me", { method: "PATCH", body: JSON.stringify({ displayName }) }); },
   async clearLocalCache() { await localRepository.clearAll(); },
 };

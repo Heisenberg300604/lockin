@@ -20,10 +20,13 @@ export interface CheckIn {
   commitmentId: string;
   userId: string;
   date: string;
-  outcome: "kept" | "broken";
+  /** "skipped" is an honest "not today" on a flexible build commitment. */
+  outcome: "kept" | "broken" | "skipped";
   note?: string;
   reason?: string;
   createdAt: string;
+  /** True while an optimistic check-in is still being saved. */
+  pending?: boolean;
 }
 
 export interface Commitment {
@@ -43,6 +46,8 @@ export interface Commitment {
   completedAt?: string;
   brokenAt?: string;
   breakReason?: string;
+  /** First day watched by the inactivity rule (3 silent days break it). */
+  inactivityStart?: string;
   checkIns: CheckIn[];
   /** Check-in history is fetched only for the currently opened commitment. */
   checkInsLoaded?: boolean;
