@@ -10,7 +10,7 @@ LockIn is a **commitment tracker**: a user creates a commitment (build a habit o
 
 | Environment | Base URL |
 | --- | --- |
-| Live (Render) | `https://lockin-a0os.onrender.com/api/v1` |
+| Live (Render) | `https://lockin-91dp.onrender.com/api/v1` |
 | Local backend | `http://localhost:3001/api/v1` (iOS simulator) · `http://10.0.2.2:3001/api/v1` (Android emulator) · `http://<Mac-LAN-IP>:3001/api/v1` (real device, same Wi‑Fi) |
 
 - Make the base URL configurable: `--dart-define=API_URL=...`. No trailing slash.
@@ -256,7 +256,7 @@ The API returns raw data only; progress numbers are computed in the client (the 
 ```bash
 # get a token from the Clerk SDK / a signed-in web session, then:
 TOKEN=...
-curl -s https://lockin-a0os.onrender.com/api/v1/me -H "Authorization: Bearer $TOKEN"
-curl -s https://lockin-a0os.onrender.com/api/v1/commitments -H "Authorization: Bearer $TOKEN"
+curl -s https://lockin-91dp.onrender.com/api/v1/me -H "Authorization: Bearer $TOKEN"
+curl -s https://lockin-91dp.onrender.com/api/v1/commitments -H "Authorization: Bearer $TOKEN"
 ```
 Without a token you should get `401 {"message":"A valid bearer token is required.", ...}` — that confirms you're hitting the right server.
